@@ -31,7 +31,7 @@ version.code = 1
 # Configuración de Android
 android.api = 33
 android.minapi = 24
-android.ndk = 25b
+android.ndk = 27b
 android.sdk = 33
 android.accept_sdk_license = True
 
