@@ -1331,6 +1331,11 @@ class GameWidget(Widget):
                     Color(1,1,1,min(1.0, c.shinra_epico_timer/3.0))
                     Rectangle(texture=tex, pos=(0,0), size=(w,h))
 
+            hud_y = oy + GRID_SIZE*t - t*0.5
+            self._draw_text(ox + t*1.1, hud_y, f"NIVEL {c.current_level}", int(t*0.4), (1,1,1))
+            self._draw_text(ox + t*4.3, hud_y, f"VIDAS {c.p1['lives']}", int(t*0.4), (1,0.25,0.25))
+            self._draw_text(ox + GRID_SIZE*t - t*1.1, hud_y, f"PTS {c.p1['score']}", int(t*0.4), (0,0.9,1))
+
     def _draw_text(self, x, y, text, size=12, color=(1,1,1)):
         try:
             lbl = CoreLabel(text=str(text), font_size=max(1,size), color=(color[0],color[1],color[2],1), bold=True)
@@ -1390,39 +1395,59 @@ class TouchControls(FloatLayout):
     def __init__(self, game_widget, **kwargs):
         super().__init__(**kwargs)
         self.gw = game_widget
-        self.size_hint = (1, None)
-        self.base = min(Window.width, Window.height)
-        self.height = self.base * 0.35
+        self.size_hint = (1, 1)
         self._dir = None
 
-        btn_s = self.base * 0.15
-        spacing = self.base * 0.02
-
-        dpad = FloatLayout(size_hint=(None, None), size=(btn_s*3+spacing*2, btn_s*3+spacing*2),
-                           pos_hint={'x':0.02, 'y':0.05})
+        self.dpad = FloatLayout(size_hint=(None, None))
+        self._dirbtns = []
         dirs = [('up',0.5,0.67,'^'), ('left',0,0.33,'<'), ('right',1,0.33,'>'), ('down',0.5,0,'v')]
         for d, xp, yp, ch in dirs:
-            b = Button(text=ch, size_hint=(None,None), size=(btn_s,btn_s),
-                       pos_hint={'center_x':xp,'center_y':yp},
-                       font_size=btn_s*0.5, bold=True,
-                       background_color=(0,0.9,1,0.35), color=(1,1,1,0.8))
+            b = Button(text=ch, size_hint=(None, None), bold=True,
+                       background_color=(0,0.9,1,0.45), color=(1,1,1,0.9))
             b.bind(on_press=lambda inst, dd=d: self._set_dir(dd))
             b.bind(on_release=lambda inst: self._clear_dir())
-            dpad.add_widget(b)
-        self.add_widget(dpad)
+            self._dirbtns.append((b, xp, yp))
+            b.pos_hint = {'center_x': xp, 'center_y': yp}
+            self.dpad.add_widget(b)
+        self.add_widget(self.dpad)
 
-        bomb_btn = Button(text='BOMBA', size_hint=(None,None), size=(btn_s*1.3, btn_s*1.3),
-                          pos_hint={'right':0.95, 'y':0.15},
-                          font_size=btn_s*0.22, bold=True,
-                          background_color=(1,0.2,0,0.5), color=(1,1,1,0.9))
-        bomb_btn.bind(on_press=lambda inst: self._place_bomb())
-        self.add_widget(bomb_btn)
+        self.bomb_btn = Button(text='BOMBA', bold=True, size_hint=(None, None),
+                               background_color=(1,0.2,0,0.55), color=(1,1,1,0.9))
+        self.bomb_btn.bind(on_press=lambda inst: self._place_bomb())
+        self.add_widget(self.bomb_btn)
 
-        pause_btn = Button(text='||', size_hint=(None,None), size=(btn_s*0.5, btn_s*0.5),
-                           pos_hint={'right':0.98, 'top':0.98},
-                           font_size=btn_s*0.2, background_color=(1,1,1,0.2))
-        pause_btn.bind(on_press=lambda inst: self.gw.app_ref.go_menu())
-        self.add_widget(pause_btn)
+        self.pause_btn = Button(text='||', bold=True, size_hint=(None, None),
+                                background_color=(1,1,1,0.25), color=(1,1,1,0.9))
+        self.pause_btn.bind(on_press=lambda inst: self.gw.app_ref.go_menu())
+        self.add_widget(self.pause_btn)
+
+        Window.bind(on_resize=lambda *a: self._place())
+        Clock.schedule_once(lambda dt: self._place(), 0)
+
+    def _place(self):
+        w, h = Window.width, Window.height
+        if w <= 0 or h <= 0:
+            return
+        tile = min(w / GRID_SIZE, h / GRID_SIZE)
+        board = GRID_SIZE * tile
+        ox = (w - board) / 2
+        s = min(ox * 0.28, h * 0.16)
+        s = max(30, s)
+        spacing = s * 0.18
+        cluster = s * 3 + spacing * 2
+        cy = h / 2
+        self.dpad.size = (cluster, cluster)
+        self.dpad.pos = (ox/2 - cluster/2, cy - cluster/2)
+        for b, xp, yp in self._dirbtns:
+            b.size = (s, s)
+            b.font_size = s * 0.45
+        rcx = w - ox/2
+        self.bomb_btn.size = (s*1.5, s*1.5)
+        self.bomb_btn.pos = (rcx - s*0.75, cy - s*0.75)
+        self.bomb_btn.font_size = s * 0.22
+        self.pause_btn.size = (s*0.5, s*0.5)
+        self.pause_btn.pos = (w - s*0.72, h - s*0.75)
+        self.pause_btn.font_size = s * 0.3
 
     def _set_dir(self, d):
         self.gw.dir_held = d
@@ -1442,21 +1467,19 @@ class MenuWidget(FloatLayout):
         self.app_ref = app_ref
         base = min(Window.width, Window.height)
 
-        sv = ScrollView(size_hint=(1, 1), bar_width=int(base*0.012))
-        inner = BoxLayout(orientation='vertical', padding=int(base*0.03), spacing=int(base*0.015),
-                          size_hint_y=None)
-        inner.bind(minimum_height=inner.setter('height'))
+        layout = BoxLayout(orientation='vertical', size_hint=(1, 1),
+                           padding=int(base*0.03), spacing=int(base*0.012))
 
-        title = Label(text='BOMBERMAN', font_size=int(base*0.15), bold=True,
-                      color=(1,0.08,0.58,1), size_hint_y=None, height=int(base*0.2),
+        title = Label(text='BOMBERMAN', font_size=int(base*0.12), bold=True,
+                      color=(1,0.08,0.58,1), size_hint_y=0.17,
                       halign='center', valign='middle')
         title.bind(size=lambda inst, *a: setattr(inst, 'text_size', (inst.width, inst.height)))
-        sub = Label(text='EDICION NEON COLOR', font_size=int(base*0.06), bold=True,
-                    color=(0,0.9,1,1), size_hint_y=None, height=int(base*0.09),
+        sub = Label(text='EDICION NEON COLOR', font_size=int(base*0.05), bold=True,
+                    color=(0,0.9,1,1), size_hint_y=0.08,
                     halign='center', valign='middle')
         sub.bind(size=lambda inst, *a: setattr(inst, 'text_size', (inst.width, inst.height)))
-        inner.add_widget(title)
-        inner.add_widget(sub)
+        layout.add_widget(title)
+        layout.add_widget(sub)
 
         buttons = [
             ('CAMPAÑA (1 jugador)', lambda: self._start('1P')),
@@ -1466,20 +1489,19 @@ class MenuWidget(FloatLayout):
             ('SALIR', self.app_ref.stop),
         ]
         for text, cb in buttons:
-            b = Button(text=text, font_size=int(base*0.05), bold=True,
-                       size_hint_y=None, height=int(base*0.12),
+            b = Button(text=text, font_size=int(base*0.042), bold=True,
+                       size_hint_y=0.1,
                        background_color=(0.1,0.1,0.1,0.9), color=(1,1,1,0.9))
             b.bind(on_release=lambda inst, c=cb: c())
-            inner.add_widget(b)
+            layout.add_widget(b)
 
         info = Label(text='Toque los botones para jugar\nWASD + Espacio en PC',
-                     font_size=int(base*0.035), color=(0.7,0.7,0.7,0.8),
-                     size_hint_y=None, height=int(base*0.11), halign='center', valign='middle')
+                     font_size=int(base*0.033), color=(0.7,0.7,0.7,0.8),
+                     size_hint_y=0.09, halign='center', valign='middle')
         info.bind(size=lambda inst, *a: setattr(inst, 'text_size', (inst.width, inst.height)))
-        inner.add_widget(info)
+        layout.add_widget(info)
 
-        sv.add_widget(inner)
-        self.add_widget(sv)
+        self.add_widget(layout)
 
     def _start(self, mode):
         self.app_ref.start_game(mode)
@@ -1524,12 +1546,19 @@ class BombermanApp(App):
         self.game_widget.opacity = 1
         self.touch_controls.disabled = False
         self.touch_controls.opacity = 1
-        if mode == 'pain':
-            self.game_widget.start_pain()
-        elif mode == 'madara':
-            self.game_widget.start_madara()
-        else:
-            self.game_widget.start_mode(mode)
+        try:
+            if mode == 'pain':
+                self.game_widget.start_pain()
+            elif mode == 'madara':
+                self.game_widget.start_madara()
+            else:
+                self.game_widget.start_mode(mode)
+        except Exception:
+            traceback.print_exc()
+            try:
+                Clock.schedule_once(lambda dt: self.show_popup("ERROR", traceback.format_exc()), 0)
+            except Exception:
+                pass
 
     def go_menu(self, *args):
         stop_music()
