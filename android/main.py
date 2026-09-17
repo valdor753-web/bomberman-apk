@@ -2,9 +2,13 @@
 BOMBERMAN ULTRA COLOR - PORT KIVY (ANDROID)
 Puerto completo del juego tkinter a Kivy con controles tactiles.
 """
-import os, sys, random, math, time, wave, struct, io, tempfile
+import os, sys, random, math, time, wave, struct, io, tempfile, traceback
 
 os.environ['KIVY_LOG_LEVEL'] = 'warning'
+
+from kivy.config import Config
+Config.set('graphics', 'orientation', 'landscape')
+Config.set('graphics', 'resizable', False)
 
 from PIL import Image as PILImage, ImageDraw
 
@@ -15,6 +19,7 @@ from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
 from kivy.uix.label import Label
 from kivy.uix.popup import Popup
+from kivy.uix.scrollview import ScrollView
 from kivy.clock import Clock
 from kivy.core.window import Window
 from kivy.core.image import Image as CoreImage
@@ -1029,33 +1034,45 @@ class GameWidget(Widget):
 
     def tick(self, dt):
         if not self.core.game_running: return
-        if self.move_cooldown > 0: self.move_cooldown -= 1
-        if self.dir_held and self.move_cooldown <= 0:
-            self.move_player(self.core.p1, self.dir_held, 1)
-            self.move_cooldown = 3
-        self.core.update_bombs()
-        self.core.update_explosions()
-        self.core.update_enemies()
-        self.core.update_boss()
-        self.core.update_varas()
-        self.core.check_collisions()
-        self.core.check_win_conditions()
-        if self.core.shinra_epico_timer > 0: self.core.shinra_epico_timer -= 1
-        self._process_messages()
-        self.canvas.clear()
-        self._draw_game()
+        try:
+            if self.move_cooldown > 0: self.move_cooldown -= 1
+            if self.dir_held and self.move_cooldown <= 0:
+                self.move_player(self.core.p1, self.dir_held, 1)
+                self.move_cooldown = 3
+            self.core.update_bombs()
+            self.core.update_explosions()
+            self.core.update_enemies()
+            self.core.update_boss()
+            self.core.update_varas()
+            self.core.check_collisions()
+            self.core.check_win_conditions()
+            if self.core.shinra_epico_timer > 0: self.core.shinra_epico_timer -= 1
+            self._process_messages()
+            self.canvas.clear()
+            self._draw_game()
+        except Exception:
+            traceback.print_exc()
+            self.core.game_running = False
+            try:
+                msg = traceback.format_exc()
+                Clock.schedule_once(lambda dt: self.app_ref.show_popup("ERROR", msg), 0)
+            except Exception:
+                pass
 
     def _process_messages(self):
-        while self.core.pending_messages:
+        if self.core.pending_messages:
             t, txt = self.core.pending_messages.pop(0)
             self.app_ref.show_popup(t, txt)
+            return
         if self.core.game_over_msg:
             msg = self.core.game_over_msg; self.core.game_over_msg = None
             self.app_ref.show_popup("GAME OVER", msg, on_dismiss=self.app_ref.go_menu)
+            return
         if self.core.level_complete_msg:
             msg = self.core.level_complete_msg; self.core.level_complete_msg = None
             self.app_ref.show_popup("¡NIVEL COMPLETADO!", msg,
                                     on_dismiss=lambda: self.core.load_level())
+            return
         if self.core.victory_msg:
             msg = self.core.victory_msg; self.core.victory_msg = None
             self.app_ref.show_popup("¡VICTORIA!", msg, on_dismiss=self.app_ref.go_menu)
@@ -1177,6 +1194,7 @@ class GameWidget(Widget):
                     Color(0,0,0,0.3)
                     Ellipse(pos=(bx-t*0.25,by-t*0.1),size=(t*1.5,t*0.35))
                     tex = self._get_pain_sprite()
+                    if not tex: tex = TEX.get('p1')
                     sz = t * 2
                     Color(1,1,1,1)
                     Rectangle(texture=tex, pos=(bx - t*0.5, by - t*0.5 - desp), size=(sz, sz))
@@ -1215,6 +1233,7 @@ class GameWidget(Widget):
                 elif c.boss.get('tipo') in ('madara','madara_edo'):
                     pot = c.boss.get('chakra_activo')
                     tex = self._get_madara_sprite()
+                    if not tex: tex = TEX.get('p1')
                     off = t*1.0 if pot else t*0.5
                     sz = t*2 if pot else t*2
                     Color(1,1,1,1)
@@ -1372,11 +1391,12 @@ class TouchControls(FloatLayout):
         super().__init__(**kwargs)
         self.gw = game_widget
         self.size_hint = (1, None)
-        self.height = Window.width * 0.35
+        self.base = min(Window.width, Window.height)
+        self.height = self.base * 0.35
         self._dir = None
 
-        btn_s = Window.width * 0.15
-        spacing = Window.width * 0.02
+        btn_s = self.base * 0.15
+        spacing = self.base * 0.02
 
         dpad = FloatLayout(size_hint=(None, None), size=(btn_s*3+spacing*2, btn_s*3+spacing*2),
                            pos_hint={'x':0.02, 'y':0.05})
@@ -1420,37 +1440,46 @@ class MenuWidget(FloatLayout):
     def __init__(self, app_ref, **kwargs):
         super().__init__(**kwargs)
         self.app_ref = app_ref
-        layout = BoxLayout(orientation='vertical', padding=Window.width*0.1, spacing=Window.height*0.02)
+        base = min(Window.width, Window.height)
 
-        title = Label(text='BOMBERMAN', font_size=Window.width*0.1, bold=True,
-                      color=(1,0.08,0.58,1), size_hint_y=0.15)
-        sub = Label(text='EDICION NEON COLOR', font_size=Window.width*0.04, bold=True,
-                    color=(0,0.9,1,1), size_hint_y=0.08)
-        layout.add_widget(title)
-        layout.add_widget(sub)
+        sv = ScrollView(size_hint=(1, 1), bar_width=int(base*0.012))
+        inner = BoxLayout(orientation='vertical', padding=int(base*0.03), spacing=int(base*0.015),
+                          size_hint_y=None)
+        inner.bind(minimum_height=inner.setter('height'))
 
-        btn_h = 0.07
+        title = Label(text='BOMBERMAN', font_size=int(base*0.15), bold=True,
+                      color=(1,0.08,0.58,1), size_hint_y=None, height=int(base*0.2),
+                      halign='center', valign='middle')
+        title.bind(size=lambda inst, *a: setattr(inst, 'text_size', (inst.width, inst.height)))
+        sub = Label(text='EDICION NEON COLOR', font_size=int(base*0.06), bold=True,
+                    color=(0,0.9,1,1), size_hint_y=None, height=int(base*0.09),
+                    halign='center', valign='middle')
+        sub.bind(size=lambda inst, *a: setattr(inst, 'text_size', (inst.width, inst.height)))
+        inner.add_widget(title)
+        inner.add_widget(sub)
+
         buttons = [
             ('CAMPAÑA (1 jugador)', lambda: self._start('1P')),
-            ('COOPERATIVA (2 jugadores)', lambda: self._start('2P_COOP')),
-            ('VERSUS (2 jugadores)', lambda: self._start('2P_VS')),
             ('TEST PAIN', lambda: self._start('pain')),
             ('TEST MADARA', lambda: self._start('madara')),
             ('CONTROLES', self._controls),
             ('SALIR', self.app_ref.stop),
         ]
         for text, cb in buttons:
-            b = Button(text=text, font_size=Window.width*0.035, bold=True,
-                       size_hint_y=btn_h, background_color=(0.1,0.1,0.1,0.9),
-                       color=(1,1,1,0.9))
+            b = Button(text=text, font_size=int(base*0.05), bold=True,
+                       size_hint_y=None, height=int(base*0.12),
+                       background_color=(0.1,0.1,0.1,0.9), color=(1,1,1,0.9))
             b.bind(on_release=lambda inst, c=cb: c())
-            layout.add_widget(b)
+            inner.add_widget(b)
 
         info = Label(text='Toque los botones para jugar\nWASD + Espacio en PC',
-                     font_size=Window.width*0.025, color=(0.7,0.7,0.7,0.8),
-                     size_hint_y=0.1, halign='center')
-        layout.add_widget(info)
-        self.add_widget(layout)
+                     font_size=int(base*0.035), color=(0.7,0.7,0.7,0.8),
+                     size_hint_y=None, height=int(base*0.11), halign='center', valign='middle')
+        info.bind(size=lambda inst, *a: setattr(inst, 'text_size', (inst.width, inst.height)))
+        inner.add_widget(info)
+
+        sv.add_widget(inner)
+        self.add_widget(sv)
 
     def _start(self, mode):
         self.app_ref.start_game(mode)
@@ -1467,6 +1496,7 @@ class BombermanApp(App):
     def build(self):
         Window.clearcolor = (0.07, 0.07, 0.07, 1)
         self.root = FloatLayout()
+        self._overlays = []
 
         self.game_widget = GameWidget(self)
         self.game_widget.size_hint = (1, 1)
@@ -1487,6 +1517,8 @@ class BombermanApp(App):
         return self.root
 
     def start_game(self, mode):
+        for ov in list(self._overlays):
+            self._close_overlay(ov)
         self.root.remove_widget(self.menu_widget)
         self.game_widget.disabled = False
         self.game_widget.opacity = 1
@@ -1501,6 +1533,8 @@ class BombermanApp(App):
 
     def go_menu(self, *args):
         stop_music()
+        for ov in list(self._overlays):
+            self._close_overlay(ov)
         self.game_widget.core.game_running = False
         self.game_widget.disabled = True
         self.game_widget.opacity = 0
@@ -1510,20 +1544,72 @@ class BombermanApp(App):
             self.root.add_widget(self.menu_widget)
 
     def show_popup(self, title, text, on_dismiss=None):
-        content = BoxLayout(orientation='vertical', padding=10, spacing=10)
-        lbl = Label(text=text, font_size=Window.width*0.03, halign='center',
-                    valign='middle', text_size=(Window.width*0.7, None))
-        content.add_widget(lbl)
-        btn = Button(text='OK', size_hint_y=0.25, font_size=Window.width*0.04,
-                     background_color=(0,0.9,1,0.8))
-        content.add_widget(btn)
-        popup = Popup(title=title, content=content, size_hint=(0.85, 0.5),
-                      auto_dismiss=False, title_font_size=Window.width*0.04)
-        def dismiss(*a):
-            popup.dismiss()
-            if on_dismiss: on_dismiss()
-        btn.bind(on_release=dismiss)
-        popup.open()
+        try:
+            ov = FloatLayout(size_hint=(1, 1))
+            bg_ov = Rectangle(pos=ov.pos, size=ov.size)
+            ov.canvas.before.add(Color(0, 0, 0, 0.6))
+            ov.canvas.before.add(bg_ov)
+            def sync_ov(*a):
+                bg_ov.pos = ov.pos
+                bg_ov.size = ov.size
+            ov.bind(size=sync_ov, pos=sync_ov)
+
+            base = min(Window.width, Window.height)
+            box = BoxLayout(orientation='vertical', padding=int(base*0.03),
+                            spacing=int(base*0.015),
+                            size_hint=(0.88, 0.62),
+                            pos_hint={'center_x': 0.5, 'center_y': 0.5})
+            bg_box = Rectangle(pos=box.pos, size=box.size)
+            box.canvas.before.add(Color(0.13, 0.13, 0.16, 1))
+            box.canvas.before.add(bg_box)
+            borde = Line(rectangle=(box.x, box.y, box.width, box.height), width=2)
+            box.canvas.after.add(Color(0, 0.9, 1, 1))
+            box.canvas.after.add(borde)
+            def sync_box(*a):
+                bg_box.pos = box.pos
+                bg_box.size = box.size
+                borde.rectangle = (box.x, box.y, box.width, box.height)
+            box.bind(size=sync_box, pos=sync_box)
+
+            t = Label(text=title, font_size=int(base*0.055), bold=True,
+                      color=(1, 0.1, 0.6, 1), size_hint_y=0.22,
+                      halign='center', valign='middle')
+            t.bind(size=lambda inst, *a: setattr(inst, 'text_size', (inst.width, inst.height)))
+            msg = Label(text=str(text), font_size=int(base*0.03), color=(1, 1, 1, 0.95),
+                        size_hint_y=None, halign='center', valign='middle')
+            msg.bind(size=lambda inst, *a: setattr(inst, 'text_size', (inst.width, inst.height)))
+            ok = Button(text='OK', size_hint_y=0.13, font_size=int(base*0.05),
+                        background_color=(0, 0.9, 1, 0.8), color=(0.05, 0.05, 0.05, 1))
+            ok.bind(on_release=lambda inst: self._close_overlay(ov, on_dismiss))
+            box.add_widget(t)
+            box.add_widget(msg)
+            box.add_widget(ok)
+            ov.add_widget(box)
+            self.root.add_widget(ov)
+            self._overlays.append(ov)
+        except Exception:
+            traceback.print_exc()
+            try:
+                if on_dismiss: on_dismiss()
+            except Exception:
+                pass
+
+    def _close_overlay(self, ov, on_dismiss=None):
+        try:
+            if ov in self.root.children:
+                self.root.remove_widget(ov)
+        except Exception:
+            pass
+        try:
+            if ov in self._overlays:
+                self._overlays.remove(ov)
+        except Exception:
+            pass
+        if on_dismiss:
+            try:
+                on_dismiss()
+            except Exception:
+                traceback.print_exc()
 
     def on_pause(self):
         return True
@@ -1533,5 +1619,14 @@ class BombermanApp(App):
 
 
 if __name__ == '__main__':
+    def _safe_hook(tp, val, tb):
+        err = ''.join(traceback.format_exception(tp, val, tb))
+        print("BOMBER_FATAL", err)
+        try:
+            with open(os.path.join(tempfile.gettempdir(), 'bomber_error.log'), 'w') as f:
+                f.write(err)
+        except Exception:
+            pass
+    sys.excepthook = _safe_hook
     load_all_textures()
     BombermanApp().run()
