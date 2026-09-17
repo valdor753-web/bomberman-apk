@@ -53,3 +53,5 @@ android.allow_backup = True
 
 # Configuración de P4A (Python for Android)
 p4a.bootstrap = sdl2
+p4a.branch = develop
+p4a.commit = 5865575d81d53617784428ee29f57be2716311ea
