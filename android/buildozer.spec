@@ -19,7 +19,7 @@ source.include_dirs = sprites,madara,pain_frames_big,music
 # presplash.filename = %(source.dir)s/presplash.png
 
 # Orientación
-orientation = portrait
+orientation = landscape
 
 # Permiso para Internet
 android.permissions = INTERNET,ACCESS_NETWORK_STATE
