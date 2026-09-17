@@ -36,7 +36,7 @@ android.sdk = 33
 android.accept_sdk_license = True
 
 # Compile with ARMv7a (most common)
-android.arch = arm64-v8a
+android.archs = arm64-v8a
 
 # Buildozer
 fullscreen = 1
